@@ -6,7 +6,22 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "Hello Render!"
+    return send_from_directory("static", "chat.html")
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)  # local testing only
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.json
+    user_query = data.get("message", "").strip()
+
+    if not user_query:
+        return jsonify({"error": "Empty message"}), 400
+
+    try:
+        answer, source = get_answer_from_query(user_query) 
+        return jsonify({
+            "answer": answer,
+            "source": source
+        })
+    except Exception as e:  
+        return jsonify({"error": str(e)}), 500
+
