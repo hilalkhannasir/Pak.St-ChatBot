@@ -1,29 +1,43 @@
-from flask import Flask, request, jsonify,send_from_directory
-import os
+import streamlit as st
 from data_retrieval import get_answer_from_query
 
-app = Flask(__name__)
+st.set_page_config(page_title="Pakistan History Chatbot", page_icon="📚")
 
-@app.route("/")
-def index():
-    return send_from_directory("static", "chat.html")
+st.title("Study Pakistan History with AI")
+st.caption("Trained on O Level Pakistan Studies with Web Search")
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.json
-    user_query = data.get("message", "").strip()
+# chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    if not user_query:
-        return jsonify({"error": "Empty message"}), 400
+# display previous chat
+for role, content in st.session_state.messages:
+    with st.chat_message(role):
+        st.write(content)
 
-    try:
-        answer, source = get_answer_from_query(user_query) 
-        return jsonify({
-            "answer": answer,
-            "source": source
-        })
-    except Exception as e:  
-        return jsonify({"error": str(e)}), 500
+# user input
+user_query = st.chat_input("Ask a question about Pakistan history...")
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if user_query:
+
+    # show user message
+    st.session_state.messages.append(("user", user_query))
+    with st.chat_message("user"):
+        st.write(user_query)
+
+    # thinking message
+    with st.chat_message("assistant"):
+        thinking = st.empty()
+        thinking.write("AI is thinking...")
+
+        try:
+            answer, source = get_answer_from_query(user_query)
+            thinking.empty()
+            st.write(answer)
+            st.caption(f"Source: {source}")
+
+            st.session_state.messages.append(("assistant", answer))
+
+        except Exception as e:
+            thinking.empty()
+            st.write(f"Error: {e}")
