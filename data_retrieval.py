@@ -30,7 +30,7 @@ def get_response_from_lama(prompt: str, model: str = "openai/gpt-oss-20b") -> st
 def get_answer_from_query(user_query):
   template = """Analyze the following Question and give one word answer of YES if the question is about pakistan history or about the mughal empire,
   about the events that occured in indian subcontinent after mughal empire and before partition of the subcontinent and formation of Pakistan.
-   answer with NO otherwise. Don't over-format the result. Keep it Simple, concise like O level exam style answers. Don't add <br> tokens.Question: {query}"""
+   answer with NO otherwise. Question: {query}"""
 
   prompt = PromptTemplate(input_variables=["query"],template=template)
   final_prompt = prompt.format(query=user_query)
@@ -40,7 +40,6 @@ def get_answer_from_query(user_query):
 
   query_embedding = generate_embeddings([user_query])[0]
   query_result = index.query(vector=query_embedding.tolist(), top_k=3)
-  reply_from = ''
   if query_result['matches'][0]['score']>0.65:
     context = "\n".join([" ".join(match['values']) for match in query_result['matches']])
     reply_from = 'Book'
@@ -50,6 +49,6 @@ def get_answer_from_query(user_query):
     context = "\n\n".join(relevant_content)
     reply_from = 'Internet Search'
 
-  llama_prompt = f"Context:\n{context}\n\nUser Query: {user_query}\nAnswer:"
+  llama_prompt = f"Context:\n{context}\n\nUser Query: {user_query}\nRestrictions:Don't over-format the result. Keep it Simple, concise like O level exam style answers. Don't add <br> tokens.\nAnswer:"
   response = get_response_from_lama(llama_prompt)
   return response,reply_from

@@ -4,29 +4,9 @@ from data_retrieval import get_answer_from_query
 
 app = Flask(__name__)
 
-
 @app.route("/")
 def index():
-    return send_from_directory("static", "chat.html")
-
-@app.route("/chat", methods=["GET","POST"])
-def chat():
-    data = request.json
-    user_query = data.get("message", "").strip()
-
-    if not user_query:
-        return jsonify({"error": "Empty message"}), 400
-
-    try:
-        answer, source = get_answer_from_query(user_query)
-        return jsonify({
-            "answer": answer,
-            "source": source
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    return "Hello Render!"
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT"))
-    app.run(host="0.0.0.0",port=port)
+    app.run(host="0.0.0.0", port=1000)  # local testing only
