@@ -1,4 +1,4 @@
-🇵🇰 Pakistan Studies RAG Chatbot
+#🇵🇰 Pakistan Studies RAG Chatbot
 
 A Retrieval-Augmented Generation (RAG) based chatbot designed to answer questions about Pakistan Studies and History.
 
@@ -6,27 +6,24 @@ The chatbot retrieves information from a Pakistan Studies textbook and generates
 
 This hybrid approach helps produce accurate, contextual, and reliable responses while minimizing hallucinations.
 
-🚀 Features
+##🚀 Features
 
-📚 RAG-Based Question Answering
+###📚 RAG-Based Question Answering
 Retrieves relevant passages from a Pakistan Studies history book.
 
-🌐 Automatic Web Search Fallback
+###🌐 Automatic Web Search Fallback
 If the local context is insufficient, the system performs a Tavily web search.
 
-🧠 Context-Aware Responses
+###🧠 Context-Aware Responses
 Answers are generated using retrieved information to reduce hallucinations.
 
-📄 OCR for Scanned PDFs
+###📄 OCR for Scanned PDFs
 Uses Tesseract OCR to extract text from scanned textbook pages.
 
-🔎 Semantic Retrieval
+###🔎 Semantic Retrieval
 Uses embeddings and a vector database to find the most relevant sections of the textbook.
 
-⚡ Hybrid Knowledge System
-Combines local knowledge base + real-time web search.
-
-🏗 System Architecture
+##🏗 System Architecture
 User Question
       │
       ▼
@@ -49,16 +46,16 @@ Generation│
           │
           ▼
        Response
-🛠 Tech Stack
+##🛠 Tech Stack
 
-Python
+###Python
 
-LangChain / RAG Pipeline
+###LangChain / RAG Pipeline
 
-Vector Database (FAISS / Chroma)
+###Vector Database (Pinecone)
 
-Tesseract OCR
+###Tesseract OCR
 
-Tavily Search API
+###Tavily Search API
 
-Large Language Models (LLMs)
+###Large Language Models (Groq)
