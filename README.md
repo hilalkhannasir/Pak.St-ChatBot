@@ -2,9 +2,8 @@
 
 A Retrieval-Augmented Generation (RAG) based chatbot designed to answer questions about Pakistan Studies and History.
 
-The chatbot retrieves information from a Pakistan Studies textbook and generates answers using an LLM. If the retrieved context is insufficient, the system automatically performs a web search using Tavily to gather additional information.
+The chatbot retrieves information from a Pakistan Studies textbook and generates answers using an LLM. If the retrieved context is insufficient, the system automatically performs a web search using Tavily to gather the required information.
 
-This hybrid approach helps produce accurate, contextual, and reliable responses while minimizing hallucinations.
 
 ## 🚀 Features
 
@@ -48,3 +47,7 @@ flowchart TD
 ### Tavily Search API
 
 ### Large Language Models (Groq)
+
+## 🏠 Deployment
+
+Streamlit: https://pakst-chatbot.streamlit.app/
