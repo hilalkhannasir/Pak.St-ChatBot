@@ -5,7 +5,7 @@ st.set_page_config(page_title="Pakistan History Chatbot", page_icon="📚")
 
 
 st.title("Study Pakistan History with AI")
-st.caption("Trained on O Level Pakistan Studies History Book")
+st.caption("Trained on O Levels Pakistan Studies History Book")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
