@@ -34,7 +34,7 @@ flowchart TD
     E --> F[Add Web Context to Prompt]
     F --> D
     D --> G[Final Response to User]
-
+```
 ## 🛠 Tech Stack
 
 ### Python  
