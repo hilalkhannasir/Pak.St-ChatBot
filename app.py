@@ -3,6 +3,19 @@ from data_retrieval import get_answer_from_query
 
 st.set_page_config(page_title="Pakistan History Chatbot", page_icon="📚")
 
+st.markdown("""
+<style>
+button[kind="secondary"] {
+    background-color: #1f77ff !important;
+    color: white !important;
+    border-radius: 8px !important;
+}
+button[kind="secondary"]:hover {
+    background-color: #0f5ae6 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Study Pakistan History with AI")
 st.caption("Trained on O Level Pakistan Studies History Book with additional Web Search Capability")
 
