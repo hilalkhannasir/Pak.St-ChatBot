@@ -3,36 +3,6 @@ from data_retrieval import get_answer_from_query
 
 st.set_page_config(page_title="Pakistan History Chatbot", page_icon="📚")
 
-st.markdown("""
-<style>
-
-[data-testid="stChatInput"] {
-    border: 2px solid #1f6fff !important;
-    border-radius: 10px !important;
-}
-
-[data-testid="stChatInput"] textarea {
-    border: 2px solid #1f6fff !important;
-    border-radius: 8px !important;
-}
-
-[data-testid="stChatInput"] textarea:focus {
-    border: 2px solid #1f6fff !important;
-    box-shadow: 0 0 0 2px rgba(31,111,255,0.3) !important;
-}
-
-[data-testid="stChatInput"] button {
-    background-color: #1f6fff !important;
-    color: white !important;
-    border-radius: 8px !important;
-}
-
-[data-testid="stChatInput"] button:hover {
-    background-color: #0d4fd6 !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
 
 st.title("Study Pakistan History with AI")
 st.caption("Trained on O Level Pakistan Studies History Book")
