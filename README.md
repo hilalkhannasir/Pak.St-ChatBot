@@ -1,4 +1,4 @@
-#🇵🇰 Pakistan Studies RAG Chatbot
+# 🇵🇰 Pakistan Studies RAG Chatbot
 
 A Retrieval-Augmented Generation (RAG) based chatbot designed to answer questions about Pakistan Studies and History.
 
@@ -6,56 +6,44 @@ The chatbot retrieves information from a Pakistan Studies textbook and generates
 
 This hybrid approach helps produce accurate, contextual, and reliable responses while minimizing hallucinations.
 
-##🚀 Features
+## 🚀 Features
 
-###📚 RAG-Based Question Answering
+### 📚 RAG-Based Question Answering
 Retrieves relevant passages from a Pakistan Studies history book.
 
-###🌐 Automatic Web Search Fallback
+### 🌐 Automatic Web Search Fallback
 If the local context is insufficient, the system performs a Tavily web search.
 
-###🧠 Context-Aware Responses
+### 🧠 Context-Aware Responses
 Answers are generated using retrieved information to reduce hallucinations.
 
-###📄 OCR for Scanned PDFs
+### 📄 OCR for Scanned PDFs
 Uses Tesseract OCR to extract text from scanned textbook pages.
 
-###🔎 Semantic Retrieval
+### 🔎 Semantic Retrieval
 Uses embeddings and a vector database to find the most relevant sections of the textbook.
 
-##🏗 System Architecture
-User Question
-      │
-      ▼
-Vector Database Retrieval
-(Pakistan Studies Book)
-      │
-      ▼
-Is Context Enough?
-      │
-  ┌───┴────┐
-  │        │
-Yes       No
-  │        │
-  ▼        ▼
-LLM       Tavily Web Search
-Answer    │
-Generation│
-          ▼
-      LLM Answer
-          │
-          ▼
-       Response
-##🛠 Tech Stack
+## 🏗 System Architecture
 
-###Python
+```mermaid
+flowchart TD
+    A[User Question] --> B[Retrieve Context from Pakistan Studies Book]
+    B --> C{Is Context Enough?}
+    C -->|Yes| D[Generate Answer using LLM]
+    C -->|No| E[Perform Tavily Web Search]
+    E --> F[Add Web Context to Prompt]
+    F --> D
+    D --> G[Final Response to User]
+## 🛠 Tech Stack
 
-###LangChain / RAG Pipeline
+### Python  
 
-###Vector Database (Pinecone)
+### LangChain / RAG Pipeline
 
-###Tesseract OCR
+### Vector Database (Pinecone)
 
-###Tavily Search API
+### Tesseract OCR
 
-###Large Language Models (Groq)
+### Tavily Search API
+
+### Large Language Models (Groq)
