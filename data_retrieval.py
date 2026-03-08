@@ -50,7 +50,7 @@ def get_answer_from_query(user_query):
     reply_from = 'Internet Search'
 
   llama_prompt = f"""Context:\n{context}\n\nUser Query: {user_query}\n
-  Restrictions:Don't over-format the result. Keep it Simple, concise like O level exam style answers. Don't add <br> tokens. Answer from the context.\n
+  Restrictions:Don't over-format the result. Don't add <br> tokens.\n
   Answer:"""
   response = get_response_from_lama(llama_prompt)
   return response,reply_from
