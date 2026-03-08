@@ -5,6 +5,17 @@ st.set_page_config(page_title="Pakistan History Chatbot", page_icon="📚")
 
 st.markdown("""
 <style>
+
+.stChatInput input {
+    border: 2px solid #1f6fff !important;
+    border-radius: 8px !important;
+}
+
+.stChatInput input:focus {
+    border: 2px solid #1f6fff !important;
+    box-shadow: 0 0 0 1px #1f6fff !important;
+}
+
 .stChatInput button {
     background-color: #1f6fff !important;
     color: white !important;
@@ -14,6 +25,7 @@ st.markdown("""
 .stChatInput button:hover {
     background-color: #0d4fd6 !important;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
