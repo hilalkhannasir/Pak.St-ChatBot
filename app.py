@@ -17,7 +17,7 @@ button[kind="secondary"]:hover {
 """, unsafe_allow_html=True)
 
 st.title("Study Pakistan History with AI")
-st.caption("Trained on O Level Pakistan Studies History Book with additional Web Search Capability")
+st.caption("Trained on O Level Pakistan Studies History Book")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
