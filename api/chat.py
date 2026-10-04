@@ -96,11 +96,11 @@ def chat(req: ChatRequest):
         )
 
     query_vector = _generate_embeddings(pc, [req.query])[0]
-    query_result = index.query(vector=query_vector, top_k=3)
+    query_result = index.query(vector=query_vector, top_k=3, include_metadata=True)
 
     if query_result["matches"] and query_result["matches"][0]["score"] > 0.65:
         context = "\n".join(
-            [" ".join(match["values"]) for match in query_result["matches"]]
+            [match["metadata"].get("content", "") for match in query_result["matches"]]
         )
         source = "Book"
     else:
