@@ -344,7 +344,9 @@
 
     function sourceLabel(source) {
       if (!source || source === "Error") return null;
-      return source === "Book" ? "📖 Book" : "🌐 Web";
+      if (source === "Book") return "📖 Book";
+      if (source === "Internet Search") return "🌐 Web Search";
+      return `🌐 ${source}`;
     }
 
     function appendMessage(role, text, source) {

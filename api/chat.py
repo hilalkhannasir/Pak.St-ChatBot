@@ -68,23 +68,29 @@ def _generate_embeddings(pc: Pinecone, texts: list[str]) -> list[list[float]]:
 
 def _is_pakistan_history_query(groq_client: Groq, query: str) -> bool:
     """Single-purpose classifier — kept separate so it doesn't pollute chat history."""
-    completion = groq_client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a query classifier. Reply with exactly one word: "
-                    "YES if the question is about Pakistan history, the Mughal empire, "
-                    "events in the Indian subcontinent after the Mughal empire, or the "
-                    "formation of Pakistan. Reply NO otherwise."
-                ),
-            },
-            {"role": "user", "content": query},
-        ],
-        model="openai/gpt-oss-20b",
-        max_tokens=5,
-    )
-    return completion.choices[0].message.content.strip().upper() == "YES"
+    try:
+        completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a query classifier. Reply with exactly one word: "
+                        "YES if the question is about Pakistan history, the Mughal empire, "
+                        "events in the Indian subcontinent after the Mughal empire, or the "
+                        "formation of Pakistan. Reply NO otherwise."
+                    ),
+                },
+                {"role": "user", "content": query},
+            ],
+            model="llama3-8b-8192",
+            max_tokens=5,
+            temperature=0,
+        )
+        result = completion.choices[0].message.content.strip().upper()
+        return result.startswith("YES")
+    except Exception:
+        # If classifier fails, allow the query through rather than blocking the user
+        return True
 
 
 def _build_messages(history: list[dict], context: str, query: str) -> list[dict]:
@@ -166,7 +172,7 @@ def chat(req: ChatRequest):
 
     completion = groq_client.chat.completions.create(
         messages=messages,
-        model="openai/gpt-oss-20b",
+        model="llama-3.3-70b-versatile",
     )
     answer = completion.choices[0].message.content
 
