@@ -36,18 +36,37 @@ flowchart TD
 ```
 ## 🛠 Tech Stack
 
-### Python  
-
-### LangChain / RAG Pipeline
-
-### Vector Database (Pinecone)
-
-### Tesseract OCR
-
-### Tavily Search API
-
-### Large Language Models (Groq)
+- Python + FastAPI (serverless)
+- Pinecone — vector database + hosted inference embeddings
+- Tavily Search API — web search fallback
+- Groq — LLM inference
+- LangChain Core — prompt templates
+- Vanilla HTML/JS frontend
 
 ## 🏠 Deployment
 
-Streamlit: https://pakst-chatbot.streamlit.app/
+### Vercel (current)
+
+1. Set the following environment variables in the Vercel dashboard:
+   - `GROQ_API_KEY`
+   - `TAVILY_API_KEY`
+   - `PINECONE_API_KEY`
+   - `INDEX_NAME`
+   - `HOST_NAME`
+
+2. Deploy:
+   ```bash
+   vercel deploy
+   ```
+
+### Local development
+
+```bash
+pip install -r requirements.txt
+uvicorn api.chat:app --reload
+# Then open public/index.html in a browser (or serve with: python -m http.server 8080 -d public)
+```
+
+> **Note on embeddings:** The app previously used `sentence-transformers` locally.
+> It now uses Pinecone's hosted `multilingual-e5-large` model via `pc.inference.embed`,
+> which keeps the Vercel bundle well within the 250 MB limit.
