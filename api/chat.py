@@ -18,11 +18,27 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# Clients are initialised once per cold start (module-level)
 _groq_client: Groq | None = None
 _tavily_client: TavilyClient | None = None
 _pinecone_index = None
 _pc: Pinecone | None = None
+
+SYSTEM_PROMPT = """You are an expert tutor on Pakistan Studies and History, specialised in the O-Level Pakistan Studies syllabus.
+
+Your knowledge covers:
+- The Mughal Empire and its decline
+- The role of the East India Company and British colonial rule in the Indian Subcontinent
+- The struggle for independence: key figures (Sir Syed Ahmad Khan, Allama Iqbal, Quaid-e-Azam Muhammad Ali Jinnah), movements, and events
+- The Partition of 1947 and the formation of Pakistan
+- Post-independence history of Pakistan
+
+Guidelines for your answers:
+- Answer strictly from the provided context. Do not introduce facts not present in the context.
+- Be clear, accurate, and concise. Avoid unnecessary padding or filler.
+- Write in plain prose. Do not use markdown headers, bullet points, or HTML tags like <br>.
+- If the context is insufficient to fully answer the question, say so honestly rather than guessing.
+- Maintain awareness of the conversation history to give coherent follow-up answers.
+- Address the student directly and use an encouraging, educational tone."""
 
 
 def _get_clients():
@@ -42,7 +58,6 @@ def _get_clients():
 
 
 def _generate_embeddings(pc: Pinecone, texts: list[str]) -> list[list[float]]:
-    """Use Pinecone-hosted inference instead of local sentence-transformers."""
     result = pc.inference.embed(
         model="multilingual-e5-large",
         inputs=texts,
@@ -51,28 +66,59 @@ def _generate_embeddings(pc: Pinecone, texts: list[str]) -> list[list[float]]:
     return [item["values"] for item in result]
 
 
-def _llm_call(groq_client: Groq, prompt: str) -> str:
-    completion = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="openai/gpt-oss-20b",
-    )
-    return completion.choices[0].message.content
-
-
 def _is_pakistan_history_query(groq_client: Groq, query: str) -> bool:
-    prompt = (
-        "Analyze the following Question and give one word answer of YES if the question "
-        "is about Pakistan history, the Mughal empire, events in the Indian subcontinent "
-        "after the Mughal empire, or the formation of Pakistan. Answer with NO otherwise.\n"
-        f"Question: {query}"
+    """Single-purpose classifier — kept separate so it doesn't pollute chat history."""
+    completion = groq_client.chat.completions.create(
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a query classifier. Reply with exactly one word: "
+                    "YES if the question is about Pakistan history, the Mughal empire, "
+                    "events in the Indian subcontinent after the Mughal empire, or the "
+                    "formation of Pakistan. Reply NO otherwise."
+                ),
+            },
+            {"role": "user", "content": query},
+        ],
+        model="openai/gpt-oss-20b",
+        max_tokens=5,
     )
-    return _llm_call(groq_client, prompt).strip().upper() == "YES"
+    return completion.choices[0].message.content.strip().upper() == "YES"
+
+
+def _build_messages(history: list[dict], context: str, query: str) -> list[dict]:
+    """
+    Construct the messages array for the LLM:
+      system  → role + rules + retrieved context for this turn
+      history → prior turns (trimmed to last 10 to stay within token limits)
+      user    → current question
+    """
+    system_with_context = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"--- Retrieved Context for this question ---\n{context}\n"
+        f"-------------------------------------------"
+    )
+
+    # Keep only the last 10 messages (5 turns) to avoid token overflow
+    recent_history = history[-10:] if len(history) > 10 else history
+
+    messages = [{"role": "system", "content": system_with_context}]
+    messages.extend(recent_history)
+    messages.append({"role": "user", "content": query})
+    return messages
 
 
 # ---------- request / response models ----------
 
+class Message(BaseModel):
+    role: str   # "user" or "assistant"
+    content: str
+
+
 class ChatRequest(BaseModel):
     query: str
+    history: list[Message] = []
 
 
 class ChatResponse(BaseModel):
@@ -91,16 +137,17 @@ def chat(req: ChatRequest):
 
     if not _is_pakistan_history_query(groq_client, req.query):
         return ChatResponse(
-            answer="This chatbot only answers questions about Pakistan Studies and History.",
+            answer="I can only answer questions about Pakistan Studies and History. Please ask something related to the subject.",
             source="Error",
         )
 
+    # Retrieve context
     query_vector = _generate_embeddings(pc, [req.query])[0]
     query_result = index.query(vector=query_vector, top_k=3, include_metadata=True)
 
     if query_result["matches"] and query_result["matches"][0]["score"] > 0.65:
         context = "\n".join(
-            [match["metadata"].get("content", "") for match in query_result["matches"]]
+            match["metadata"].get("content", "") for match in query_result["matches"]
         )
         source = "Book"
     else:
@@ -113,12 +160,14 @@ def chat(req: ChatRequest):
         context = "\n\n".join(relevant)
         source = "Internet Search"
 
-    answer_prompt = (
-        f"Context:\n{context}\n\n"
-        f"User Query: {req.query}\n\n"
-        "Restrictions: Don't over-format the result. Don't add <br> tokens. "
-        "Don't add info other than the context.\n\n"
-        "Answer:"
+    # Build messages with history and call LLM
+    history_dicts = [{"role": m.role, "content": m.content} for m in req.history]
+    messages = _build_messages(history_dicts, context, req.query)
+
+    completion = groq_client.chat.completions.create(
+        messages=messages,
+        model="openai/gpt-oss-20b",
     )
-    answer = _llm_call(groq_client, answer_prompt)
+    answer = completion.choices[0].message.content
+
     return ChatResponse(answer=answer, source=source)
