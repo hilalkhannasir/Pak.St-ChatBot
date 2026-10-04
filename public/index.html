@@ -427,10 +427,16 @@
           }),
         });
 
-        if (!res.ok) throw new Error(`Server error ${res.status}`);
-
         const data = await res.json();
         thinkingRow.remove();
+
+        if (!res.ok) {
+          const detail = data.detail || `Server error ${res.status}`;
+          appendMessage("assistant", `Error: ${detail}`);
+          sendBtn.disabled = false;
+          userInput.focus();
+          return;
+        }
 
         appendMessage("assistant", data.answer, data.source);
 

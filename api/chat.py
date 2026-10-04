@@ -1,6 +1,8 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from groq import Groq
 from tavily import TavilyClient
@@ -8,6 +10,9 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -22,6 +27,10 @@ _groq_client: Groq | None = None
 _tavily_client: TavilyClient | None = None
 _pinecone_index = None
 _pc: Pinecone | None = None
+
+# Use the model that works for your Groq account
+ANSWER_MODEL     = os.getenv("GROQ_ANSWER_MODEL", "llama-3.3-70b-versatile")
+CLASSIFIER_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama3-8b-8192")
 
 SYSTEM_PROMPT = """You are an expert tutor on Pakistan Studies and History, specialised in the O-Level Pakistan Studies syllabus.
 
@@ -67,7 +76,7 @@ def _generate_embeddings(pc: Pinecone, texts: list[str]) -> list[list[float]]:
 
 
 def _is_pakistan_history_query(groq_client: Groq, query: str) -> bool:
-    """Single-purpose classifier — kept separate so it doesn't pollute chat history."""
+    """Single-purpose classifier."""
     try:
         completion = groq_client.chat.completions.create(
             messages=[
@@ -82,43 +91,35 @@ def _is_pakistan_history_query(groq_client: Groq, query: str) -> bool:
                 },
                 {"role": "user", "content": query},
             ],
-            model="llama3-8b-8192",
+            model=CLASSIFIER_MODEL,
             max_tokens=5,
             temperature=0,
         )
         result = completion.choices[0].message.content.strip().upper()
+        logger.info("Classifier result: %s", result)
         return result.startswith("YES")
-    except Exception:
-        # If classifier fails, allow the query through rather than blocking the user
+    except Exception as e:
+        logger.warning("Classifier failed (%s), allowing query through.", e)
         return True
 
 
 def _build_messages(history: list[dict], context: str, query: str) -> list[dict]:
-    """
-    Construct the messages array for the LLM:
-      system  → role + rules + retrieved context for this turn
-      history → prior turns (trimmed to last 10 to stay within token limits)
-      user    → current question
-    """
     system_with_context = (
         f"{SYSTEM_PROMPT}\n\n"
-        f"--- Retrieved Context for this question ---\n{context}\n"
-        f"-------------------------------------------"
+        f"--- Retrieved Context ---\n{context}\n"
+        f"------------------------"
     )
-
-    # Keep only the last 10 messages (5 turns) to avoid token overflow
-    recent_history = history[-10:] if len(history) > 10 else history
-
+    recent_history = history[-10:]
     messages = [{"role": "system", "content": system_with_context}]
     messages.extend(recent_history)
     messages.append({"role": "user", "content": query})
     return messages
 
 
-# ---------- request / response models ----------
+# ---------- models ----------
 
 class Message(BaseModel):
-    role: str   # "user" or "assistant"
+    role: str
     content: str
 
 
@@ -136,44 +137,57 @@ class ChatResponse(BaseModel):
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    groq_client, tavily_client, pc, index = _get_clients()
+    try:
+        groq_client, tavily_client, pc, index = _get_clients()
 
-    if not req.query.strip():
-        return ChatResponse(answer="Please enter a question.", source="Error")
+        if not req.query.strip():
+            return ChatResponse(answer="Please enter a question.", source="Error")
 
-    if not _is_pakistan_history_query(groq_client, req.query):
-        return ChatResponse(
-            answer="I can only answer questions about Pakistan Studies and History. Please ask something related to the subject.",
-            source="Error",
+        if not _is_pakistan_history_query(groq_client, req.query):
+            return ChatResponse(
+                answer="I can only answer questions about Pakistan Studies and History. Please ask something related to the subject.",
+                source="Error",
+            )
+
+        # Retrieve context
+        query_vector = _generate_embeddings(pc, [req.query])[0]
+        query_result = index.query(vector=query_vector, top_k=3, include_metadata=True)
+        logger.info(
+            "Top match score: %s",
+            query_result["matches"][0]["score"] if query_result["matches"] else "none",
         )
 
-    # Retrieve context
-    query_vector = _generate_embeddings(pc, [req.query])[0]
-    query_result = index.query(vector=query_vector, top_k=3, include_metadata=True)
+        if query_result["matches"] and query_result["matches"][0]["score"] > 0.65:
+            context = "\n".join(
+                match["metadata"].get("content", "") for match in query_result["matches"]
+            )
+            source = "Book"
+        else:
+            search_result = tavily_client.search(req.query)
+            relevant = [
+                r["content"]
+                for r in search_result["results"]
+                if r.get("score", 0) > 0.65
+            ]
+            context = "\n\n".join(relevant)
+            source = "Internet Search"
 
-    if query_result["matches"] and query_result["matches"][0]["score"] > 0.65:
-        context = "\n".join(
-            match["metadata"].get("content", "") for match in query_result["matches"]
+        logger.info("Source: %s", source)
+
+        # Build messages and call LLM
+        history_dicts = [{"role": m.role, "content": m.content} for m in req.history]
+        messages = _build_messages(history_dicts, context, req.query)
+
+        completion = groq_client.chat.completions.create(
+            messages=messages,
+            model=ANSWER_MODEL,
         )
-        source = "Book"
-    else:
-        search_result = tavily_client.search(req.query)
-        relevant = [
-            r["content"]
-            for r in search_result["results"]
-            if r.get("score", 0) > 0.65
-        ]
-        context = "\n\n".join(relevant)
-        source = "Internet Search"
+        answer = completion.choices[0].message.content
+        return ChatResponse(answer=answer, source=source)
 
-    # Build messages with history and call LLM
-    history_dicts = [{"role": m.role, "content": m.content} for m in req.history]
-    messages = _build_messages(history_dicts, context, req.query)
-
-    completion = groq_client.chat.completions.create(
-        messages=messages,
-        model="llama-3.3-70b-versatile",
-    )
-    answer = completion.choices[0].message.content
-
-    return ChatResponse(answer=answer, source=source)
+    except Exception as e:
+        logger.exception("Error in /api/chat")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(e)},
+        )
