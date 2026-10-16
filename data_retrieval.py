@@ -58,7 +58,7 @@ def _embed(texts: list[str]) -> list:
     return _model.encode(texts)
 
 
-def _llm(messages: list[dict], model: str = "llama-3.3-70b-versatile") -> str:
+def _llm(messages: list[dict], model: str = "openai/gpt-oss-20b") -> str:
     """Call Groq with a messages list (supports system + multi-turn)."""
     _ensure_loaded()
     try:
