@@ -1,7 +1,6 @@
 import os
 from groq import Groq
 from tavily import TavilyClient
-from langchain_core.prompts import PromptTemplate
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 
@@ -9,48 +8,211 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-model = SentenceTransformer('sentence-transformers/all-roberta-large-v1')
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(name=os.getenv("INDEX_NAME"), host=os.getenv("HOST_NAME"))
-def generate_embeddings(texts):
-    return model.encode(texts)
 
-def get_response_from_lama(prompt: str, model: str = "openai/gpt-oss-20b") -> str:
+def _get_secret(key: str) -> str:
+    """Read from Streamlit secrets when deployed, fall back to environment variables locally."""
     try:
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        return os.getenv(key, "")
+
+
+# ---------------------------------------------------------------------------
+# Cached resource initialisation (Streamlit caches these across reruns)
+# ---------------------------------------------------------------------------
+
+def _load_model():
+    return SentenceTransformer("sentence-transformers/all-roberta-large-v1")
+
+
+def _load_clients():
+    groq_client = Groq(api_key=_get_secret("GROQ_API_KEY"))
+    tavily = TavilyClient(api_key=_get_secret("TAVILY_API_KEY"))
+    pc = Pinecone(api_key=_get_secret("PINECONE_API_KEY"))
+    index = pc.Index(name=_get_secret("INDEX_NAME"), host=_get_secret("HOST_NAME"))
+    return groq_client, tavily, index
+
+
+# Lazy globals — initialised once per process
+_model = None
+_groq_client = None
+_tavily_client = None
+_index = None
+
+
+def _ensure_loaded():
+    global _model, _groq_client, _tavily_client, _index
+    if _model is None:
+        _model = _load_model()
+    if _groq_client is None:
+        _groq_client, _tavily_client, _index = _load_clients()
+
+
+# ---------------------------------------------------------------------------
+# Core helpers
+# ---------------------------------------------------------------------------
+
+def _embed(texts: list[str]) -> list:
+    _ensure_loaded()
+    return _model.encode(texts)
+
+
+def _llm(messages: list[dict], model: str = "llama-3.3-70b-versatile") -> str:
+    """Call Groq with a messages list (supports system + multi-turn)."""
+    _ensure_loaded()
+    try:
+        completion = _groq_client.chat.completions.create(
+            messages=messages,
             model=model,
         )
-        return chat_completion.choices[0].message.content
+        return completion.choices[0].message.content
     except Exception as e:
         raise ValueError(f"Groq API call failed: {e}")
 
-def get_answer_from_query(user_query):
-  template = """Analyze the following Question and give one word answer of YES if the question is about pakistan history or about the mughal empire,
-  about the events that occured in indian subcontinent after mughal empire and before partition of the subcontinent and formation of Pakistan.
-   answer with NO otherwise. Question: {query}"""
 
-  prompt = PromptTemplate(input_variables=["query"],template=template)
-  final_prompt = prompt.format(query=user_query)
-  response = get_response_from_lama(final_prompt)
-  if response == "NO":
-    return ["Query was not About Pakistan History","Error"]
+# ---------------------------------------------------------------------------
+# Topic guard
+# ---------------------------------------------------------------------------
 
-  query_embedding = generate_embeddings([user_query])[0]
-  query_result = index.query(vector=query_embedding.tolist(), top_k=3)
-  if query_result['matches'][0]['score']>0.65:
-    context = "\n".join([" ".join(match['values']) for match in query_result['matches']])
-    reply_from = 'Book'
-  else:
-    reply = tavily_client.search(user_query)
-    relevant_content = [i["content"] for i in reply["results"] if i.get("score",0) > 0.65]
-    context = "\n\n".join(relevant_content)
-    reply_from = 'Internet Search'
+_GUARD_SYSTEM = (
+    "You are a strict topic classifier. "
+    "Reply with exactly one word: YES or NO."
+)
 
-  llama_prompt = f"""Context:\n{context}\n\nUser Query: {user_query}\n
-  Restrictions:Don't over-format the result. Don't add <br> tokens. Don't add info other than the context.\n
-  Answer:"""
-  response = get_response_from_lama(llama_prompt)
-  return response,reply_from
+_GUARD_USER = (
+    "Is the following question about Pakistan Studies, Pakistan history, "
+    "the Mughal Empire, the Indian subcontinent before partition, "
+    "the Pakistani independence movement, or related geography/culture? "
+    "Question: {query}"
+)
+
+
+def _is_relevant_query(user_query: str) -> bool:
+    response = _llm([
+        {"role": "system", "content": _GUARD_SYSTEM},
+        {"role": "user",   "content": _GUARD_USER.format(query=user_query)},
+    ])
+    return response.strip().upper().startswith("YES")
+
+
+# ---------------------------------------------------------------------------
+# Dynamic rejection
+# ---------------------------------------------------------------------------
+
+_REJECTION_SYSTEM = (
+    "You are a friendly Pakistan Studies assistant. "
+    "The user asked something outside your area of expertise. "
+    "Politely decline in 1-2 sentences, mention what topics you *can* help with, "
+    "and encourage them to ask a relevant question."
+)
+
+
+def _dynamic_rejection(user_query: str) -> str:
+    return _llm([
+        {"role": "system", "content": _REJECTION_SYSTEM},
+        {"role": "user",   "content": user_query},
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+# Score thresholds
+_BOOK_SCORE_THRESHOLD = 0.60   # prefer book; lower = more inclusive
+_WEB_SCORE_THRESHOLD  = 0.60   # minimum Tavily result quality
+
+
+def get_answer_from_query(
+    user_query: str,
+    chat_history: list[dict] | None = None,
+) -> tuple[str, str]:
+    """
+    Returns (answer, source) where source is 'Book', 'Internet Search',
+    or 'Out of Scope'.
+
+    chat_history: list of {"role": "user"|"assistant", "content": "..."} dicts
+                  representing the conversation so far (excluding current query).
+    """
+    _ensure_loaded()
+
+    if chat_history is None:
+        chat_history = []
+
+    # --- 1. Topic guard --------------------------------------------------- #
+    if not _is_relevant_query(user_query):
+        rejection = _dynamic_rejection(user_query)
+        return rejection, "Out of Scope"
+
+    # --- 2. Vector retrieval from book ------------------------------------ #
+    query_embedding = _embed([user_query])[0]
+    query_result = _index.query(vector=query_embedding.tolist(), top_k=5)
+
+    book_context = ""
+    used_source = "Internet Search"
+
+    top_score = query_result["matches"][0]["score"] if query_result["matches"] else 0.0
+
+    if top_score >= _BOOK_SCORE_THRESHOLD:
+        # Use book passages — join metadata text if available, else vector values
+        passages = []
+        for match in query_result["matches"]:
+            if match["score"] < _BOOK_SCORE_THRESHOLD:
+                continue
+            text = match.get("metadata", {}).get("text") or " ".join(str(v) for v in match["values"])
+            passages.append(text)
+        book_context = "\n\n".join(passages)
+        used_source = "Book"
+
+    # --- 3. Web fallback (or supplement) ---------------------------------- #
+    web_context = ""
+    if used_source != "Book":
+        try:
+            results = _tavily_client.search(user_query)
+            relevant = [
+                r["content"]
+                for r in results.get("results", [])
+                if r.get("score", 0) >= _WEB_SCORE_THRESHOLD
+            ]
+            web_context = "\n\n".join(relevant)
+        except Exception:
+            web_context = ""
+
+    # --- 4. Build context block ------------------------------------------- #
+    context_parts = []
+    if book_context:
+        context_parts.append(f"[Source: Pakistan Studies Book]\n{book_context}")
+    if web_context:
+        context_parts.append(f"[Source: Web Search]\n{web_context}")
+
+    context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant context found."
+
+    # --- 5. System prompt ------------------------------------------------- #
+    system_prompt = (
+        "You are a knowledgeable Pakistan Studies assistant specialising in "
+        "the history of Pakistan, the Mughal Empire, the Indian subcontinent, "
+        "and the independence movement.\n\n"
+        "Rules:\n"
+        "- Base your answer strictly on the provided context.\n"
+        "- Prefer information from the Pakistan Studies Book over web sources.\n"
+        "- Keep answers clear and concise; avoid unnecessary formatting.\n"
+        "- Do NOT add <br> tags or HTML.\n"
+        "- If the context is insufficient, say so honestly rather than guessing.\n\n"
+        f"Context:\n{context}"
+    )
+
+    # --- 6. Build message list with history ------------------------------- #
+    messages = [{"role": "system", "content": system_prompt}]
+
+    # Include prior conversation turns (cap at last 10 to stay within token limits)
+    for turn in chat_history[-10:]:
+        if turn.get("role") in ("user", "assistant") and turn.get("content"):
+            messages.append({"role": turn["role"], "content": turn["content"]})
+
+    # Current user question
+    messages.append({"role": "user", "content": user_query})
+
+    # --- 7. Generate answer ----------------------------------------------- #
+    answer = _llm(messages)
+    return answer, used_source

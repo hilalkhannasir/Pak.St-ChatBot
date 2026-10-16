@@ -1,1 +1,9 @@
 .env
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.idea/
+*.jpeg
+*.jpg
+*.png
+.venv/
