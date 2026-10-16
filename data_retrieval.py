@@ -76,23 +76,26 @@ def _llm(messages: list[dict], model: str = "openai/gpt-oss-20b") -> str:
 # ---------------------------------------------------------------------------
 
 _GUARD_SYSTEM = (
-    "You are a strict topic classifier. "
-    "Reply with exactly one word: YES or NO."
+    "You are a strict topic classifier. Reply with exactly one word: YES or NO.\n"
+    "Answer YES if the message is about Pakistan Studies, Pakistan history, "
+    "the Mughal Empire, the Indian subcontinent, the independence movement, "
+    "or related geography/culture.\n"
+    "Also answer YES if the message is a follow-up or continuation of a "
+    "conversation that was already about those topics (e.g. 'tell me more', "
+    "'who was he?', 'explain that', 'what happened next').\n"
+    "Answer NO only if the message is clearly unrelated to those topics "
+    "and there is no prior relevant conversation context."
 )
 
-_GUARD_USER = (
-    "Is the following question about Pakistan Studies, Pakistan history, "
-    "the Mughal Empire, the Indian subcontinent before partition, "
-    "the Pakistani independence movement, or related geography/culture? "
-    "Question: {query}"
-)
 
-
-def _is_relevant_query(user_query: str) -> bool:
-    response = _llm([
-        {"role": "system", "content": _GUARD_SYSTEM},
-        {"role": "user",   "content": _GUARD_USER.format(query=user_query)},
-    ])
+def _is_relevant_query(user_query: str, chat_history: list[dict]) -> bool:
+    messages = [{"role": "system", "content": _GUARD_SYSTEM}]
+    # Give the guard the last 4 turns so it can judge follow-ups in context
+    for turn in chat_history[-4:]:
+        if turn.get("role") in ("user", "assistant") and turn.get("content"):
+            messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": user_query})
+    response = _llm(messages)
     return response.strip().upper().startswith("YES")
 
 
@@ -141,7 +144,7 @@ def get_answer_from_query(
         chat_history = []
 
     # --- 1. Topic guard --------------------------------------------------- #
-    if not _is_relevant_query(user_query):
+    if not _is_relevant_query(user_query, chat_history):
         rejection = _dynamic_rejection(user_query)
         return rejection, "Out of Scope"
 
